@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brandenburg Bestenliste — Sprungdisziplinen</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  :root{
+    --bg:#12151a;
+    --bg-panel:#1a1e26;
+    --bg-row:#181c23;
+    --bg-row-alt:#1d222a;
+    --line:#2a303b;
+    --ink:#e9ecf1;
+    --ink-dim:#8b93a3;
+    --amber:#ff8a2b;
+    --amber-dim:#ff8a2b33;
+    --hj:#4fb8e0;
+    --pv:#5fd18a;
+    --lj:#ffcf4d;
+    --tj:#ff6b6b;
+    --new:#ff8a2b;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 400px at 20% -10%, #1c2230 0%, transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'Oswald', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'JetBrains Mono', monospace;}
+
+  header{
+    padding:28px 20px 18px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg, #171b22, #12151a);
+  }
+  .eyebrow{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    letter-spacing:.18em;
+    color:var(--amber);
+    text-transform:uppercase;
+    margin-bottom:6px;
+  }
+  h1{
+    margin:0 0 4px;
+    font-weight:700;
+    font-size:24px;
+    letter-spacing:.01em;
+    text-transform:uppercase;
+  }
+  .sub{
+    color:var(--ink-dim);
+    font-size:13px;
+    font-family:'JetBrains Mono', monospace;
+  }
+  .flag{
+    display:inline-block;
+    margin-top:10px;
+    padding:5px 10px;
+    border-radius:3px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    letter-spacing:.05em;
+  }
+  .flag.demo{ border:1px solid var(--amber-dim); background:var(--amber-dim); color:var(--amber); }
+  .flag.live{ border:1px solid #5fd18a33; background:#5fd18a1a; color:var(--pv); }
+
+  .controls{
+    padding:16px 20px;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    background:var(--bg-panel);
+    border-bottom:1px solid var(--line);
+    position:sticky;
+    top:0;
+    z-index:10;
+  }
+  .group-label{
+    font-family:'JetBrains Mono', monospace;
+    font-size:10px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--ink-dim);
+    margin-bottom:6px;
+  }
+  .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  .chipgroup{display:flex; gap:6px; flex-wrap:wrap;}
+  .chip{
+    font-family:'JetBrains Mono', monospace;
+    font-size:12px;
+    padding:6px 12px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:transparent;
+    color:var(--ink-dim);
+    cursor:pointer;
+    transition:.15s;
+  }
+  .chip.active{ border-color:currentColor; }
+  .chip[data-disc="hochsprung"].active{color:var(--hj); background:#4fb8e01a;}
+  .chip[data-disc="stabhochsprung"].active{color:var(--pv); background:#5fd18a1a;}
+  .chip[data-disc="weitsprung"].active{color:var(--lj); background:#ffcf4d1a;}
+  .chip[data-disc="dreisprung"].active{color:var(--tj); background:#ff6b6b1a;}
+  .chip[data-age].active{color:var(--amber); border-color:var(--amber); background:var(--amber-dim);}
+
+  input[type="text"]{
+    background:var(--bg-row);
+    border:1px solid var(--line);
+    color:var(--ink);
+    font-family:'JetBrains Mono', monospace;
+    font-size:12px;
+    padding:7px 10px;
+    border-radius:4px;
+    outline:none;
+    flex:1;
+    min-width:120px;
+  }
+  input:focus{border-color:var(--amber);}
+
+  .meta-bar{
+    padding:10px 20px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    color:var(--ink-dim);
+    display:flex;
+    justify-content:space-between;
+  }
+
+  table{width:100%; border-collapse:collapse;}
+  thead th{
+    text-align:left;
+    font-family:'JetBrains Mono', monospace;
+    font-size:10px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--ink-dim);
+    padding:8px 10px;
+    border-bottom:1px solid var(--line);
+    white-space:nowrap;
+  }
+  tbody tr{border-bottom:1px solid var(--line);}
+  tbody tr:nth-child(odd){background:var(--bg-row-alt);}
+  tbody tr.top3{box-shadow:inset 3px 0 0 var(--amber);}
+  td{padding:10px; font-size:13px; vertical-align:middle;}
+  td.rank{font-family:'JetBrains Mono', monospace; font-weight:700; color:var(--ink-dim); width:36px;}
+  td.name{font-weight:500;}
+  td.club{color:var(--ink-dim); font-size:12px;}
+  td.mark{font-family:'JetBrains Mono', monospace; font-weight:700; font-size:15px;}
+  td.date{font-family:'JetBrains Mono', monospace; color:var(--ink-dim); font-size:12px; white-space:nowrap;}
+  td.venue{color:var(--ink-dim); font-size:12px;}
+
+  .empty{
+    padding:40px 20px;
+    text-align:center;
+    color:var(--ink-dim);
+    font-family:'JetBrains Mono', monospace;
+    font-size:13px;
+    line-height:1.7;
+  }
+
+  footer{
+    padding:16px 20px 30px;
+    color:var(--ink-dim);
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    border-top:1px solid var(--line);
+    line-height:1.6;
+  }
+
+  @media (max-width:520px){
+    td.venue{display:none;}
+    thead th:nth-child(7){display:none;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Bestenliste Brandenburg · Sprungdisziplinen</div>
+  <h1>Sprung Board Brandenburg</h1>
+  <div class="sub">Top 15 je Disziplin &amp; Altersklasse · Landesverband Brandenburg</div>
+  <div id="dataFlag" class="flag demo">Lade Daten…</div>
+</header>
+
+<div class="controls">
+  <div>
+    <div class="group-label">Disziplin</div>
+    <div class="chipgroup" id="discFilters">
+      <button class="chip active" data-disc="hochsprung">Hochsprung</button>
+      <button class="chip" data-disc="stabhochsprung">Stabhochsprung</button>
+      <button class="chip" data-disc="weitsprung">Weitsprung</button>
+      <button class="chip" data-disc="dreisprung">Dreisprung</button>
+    </div>
+  </div>
+  <div>
+    <div class="group-label">Altersklasse</div>
+    <div class="chipgroup" id="ageFilters">
+      <button class="chip active" data-age="Männer">Männer</button>
+      <button class="chip" data-age="Frauen">Frauen</button>
+      <button class="chip" data-age="mU20">m U20</button>
+      <button class="chip" data-age="wU20">w U20</button>
+      <button class="chip" data-age="mU18">m U18</button>
+      <button class="chip" data-age="wU18">w U18</button>
+      <button class="chip" data-age="mU16">m U16</button>
+      <button class="chip" data-age="wU16">w U16</button>
+      <button class="chip" data-age="M15">M15</button>
+      <button class="chip" data-age="W15">W15</button>
+      <button class="chip" data-age="M14">M14</button>
+      <button class="chip" data-age="W14">W14</button>
+    </div>
+  </div>
+  <div class="row">
+    <input type="text" id="searchBox" placeholder="Name oder Verein suchen…">
+  </div>
+</div>
+
+<div class="meta-bar">
+  <span id="resultCount"></span>
+  <span id="viewLabel" class="mono"></span>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Platz</th>
+      <th>Leistung</th>
+      <th>Name</th>
+      <th>Verein</th>
+      <th>Jahrgang</th>
+      <th>Datum</th>
+      <th>Ort</th>
+    </tr>
+  </thead>
+  <tbody id="tableBody"></tbody>
+</table>
+<div class="empty" id="emptyState" style="display:none;"></div>
+
+<footer>
+  Datenquelle: Bestenliste des Leichtathletikverbandes Brandenburg e.V., wöchentlich aktualisiert.
+  Zeigt jeweils Top 15 einer Disziplin/Altersklasse-Kombination.
+</footer>
+
+<script>
+// ---- Demo-Daten: nur Fallback, falls data.json (noch) nicht existiert ----
+const DEMO_DATA = {
+  "hochsprung|Männer": [
+    {rank:1, name:"Max Mustermann", club:"LG Potsdam", mark:"2.05", unit:"m", date:"2026-06-14", venue:"Potsdam"},
+    {rank:2, name:"Jonas Beispiel", club:"SC Cottbus", mark:"2.01", unit:"m", date:"2026-07-02", venue:"Cottbus"},
+  ],
+  "stabhochsprung|Männer": [
+    {rank:1, name:"Torben Blech", club:"LAV Cottbus", mark:"5.70", unit:"m", date:"2026-01-28", venue:"Cottbus"},
+  ],
+};
+
+let DATA = {};
+let currentDisc = "hochsprung";
+let currentAge = "Männer";
+let search = "";
+
+function key(){ return `${currentDisc}|${currentAge}`; }
+
+function render(){
+  const flag = document.getElementById("dataFlag");
+  const rows = (DATA[key()] || []).filter(r=>{
+    if(!search) return true;
+    const s = search.toLowerCase();
+    return r.name.toLowerCase().includes(s) || (r.club||"").toLowerCase().includes(s);
+  });
+
+  document.getElementById("viewLabel").textContent =
+    `${discLabel(currentDisc)} · ${currentAge}`;
+  document.getElementById("resultCount").textContent = `${rows.length} Ergebnis${rows.length===1?"":"se"}`;
+
+  const tbody = document.getElementById("tableBody");
+  const empty = document.getElementById("emptyState");
+  tbody.innerHTML = "";
+
+  if(!rows.length){
+    empty.style.display = "block";
+    empty.textContent = DATA[key()]
+      ? "Keine Ergebnisse für diese Suche."
+      : `Noch keine Daten für ${discLabel(currentDisc)} / ${currentAge}. Evtl. wurde diese Kombination noch nicht erfasst.`;
+    return;
+  }
+  empty.style.display = "none";
+
+  rows.forEach(r=>{
+    const tr = document.createElement("tr");
+    if(r.rank <= 3) tr.classList.add("top3");
+    const dateFmt = r.date ? new Date(r.date).toLocaleDateString("de-DE",{day:"2-digit",month:"short",year:"numeric"}) : "";
+    tr.innerHTML = `
+      <td class="rank">${r.rank}.</td>
+      <td class="mark">${r.mark}&nbsp;${r.unit||"m"}</td>
+      <td class="name">${r.name}</td>
+      <td class="club">${r.club||""}</td>
+      <td class="date">${r.birthYear||"–"}</td>
+      <td class="date">${dateFmt}</td>
+      <td class="venue">${r.venue||""}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function discLabel(d){
+  return {hochsprung:"Hochsprung", stabhochsprung:"Stabhochsprung", weitsprung:"Weitsprung", dreisprung:"Dreisprung"}[d] || d;
+}
+
+function wireControls(){
+  document.querySelectorAll('#discFilters .chip').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('#discFilters .chip').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      currentDisc = btn.dataset.disc;
+      render();
+    });
+  });
+  document.querySelectorAll('#ageFilters .chip').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('#ageFilters .chip').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      currentAge = btn.dataset.age;
+      render();
+    });
+  });
+  document.getElementById('searchBox').addEventListener('input', e=>{
+    search = e.target.value; render();
+  });
+}
+
+async function init(){
+  const flag = document.getElementById("dataFlag");
+  try{
+    const res = await fetch("data.json", {cache:"no-store"});
+    if(!res.ok) throw new Error("data.json nicht gefunden");
+    const json = await res.json();
+    DATA = json.lists || json;
+    flag.textContent = "Live-Daten" + (json.generatedAt ? " · Stand: " + json.generatedAt : "");
+    flag.classList.remove("demo"); flag.classList.add("live");
+  }catch(e){
+    DATA = DEMO_DATA;
+    flag.textContent = "⚠ Demo-Daten — data.json nicht gefunden";
+  }
+  wireControls();
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
