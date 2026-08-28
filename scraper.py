@@ -79,20 +79,24 @@ async def get_results_frame(page):
 async def select_dropdown_by_label(frame, label_substring: str, option_text: str):
     """Sucht ein <select>, dessen sichtbares Label/umgebender Text label_substring
     enthaelt, und waehlt darin die Option mit option_text aus. Mehrere Fallback-
-    Strategien, weil die genaue Seitenstruktur nicht live geprueft werden konnte."""
+    Strategien, weil die genaue Seitenstruktur nicht live geprueft werden konnte.
+
+    force=True: viele Webseiten blenden das native <select> optisch aus und zeigen
+    stattdessen ein eigenes, gestyltes Dropdown an. Das <select> funktioniert dann
+    weiterhin technisch, gilt fuer Playwright aber als "nicht sichtbar" -- ohne
+    force=True wuerde select_option() dort endlos auf Sichtbarkeit warten und
+    nach 30s timeouten (genau das Verhalten aus dem ersten Testlauf)."""
     selects = await frame.query_selector_all("select")
     for sel in selects:
-        # Strategie 1: name/id/aria-label des <select> enthaelt das Stichwort
         for attr in ("name", "id", "aria-label"):
             val = await sel.get_attribute(attr)
             if val and label_substring.lower() in val.lower():
-                await sel.select_option(label=option_text)
+                await sel.select_option(label=option_text, force=True)
                 return True
-        # Strategie 2: eine der Optionen selbst enthaelt exakt den gesuchten Text
         options = await sel.query_selector_all("option")
         option_texts = [await o.inner_text() for o in options]
         if any(option_text.lower() == t.strip().lower() for t in option_texts):
-            await sel.select_option(label=option_text)
+            await sel.select_option(label=option_text, force=True)
             return True
     return False
 
