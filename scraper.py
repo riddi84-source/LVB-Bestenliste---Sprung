@@ -76,6 +76,49 @@ async def get_results_frame(page):
     raise RuntimeError("Kein iframe mit der Bestenliste gefunden -- Seitenstruktur hat sich evtl. geaendert.")
 
 
+_diagnostic_dumped = False
+
+
+async def dump_diagnostics(frame):
+    """Schreibt einmalig eine Bestandsaufnahme aller <select>-Elemente und ihrer
+    Optionen ins Log, damit wir die tatsaechliche Seitenstruktur sehen koennen,
+    ohne dass jemand manuell den Quelltext durchsuchen muss."""
+    global _diagnostic_dumped
+    if _diagnostic_dumped:
+        return
+    _diagnostic_dumped = True
+
+    print("\n" + "=" * 60)
+    print("DIAGNOSE: gefundene <select>-Elemente auf der Seite")
+    print("=" * 60)
+    selects = await frame.query_selector_all("select")
+    print(f"Anzahl <select>-Elemente: {len(selects)}")
+    for i, sel in enumerate(selects):
+        name = await sel.get_attribute("name")
+        sel_id = await sel.get_attribute("id")
+        aria = await sel.get_attribute("aria-label")
+        options = await sel.query_selector_all("option")
+        option_texts = [(await o.inner_text()).strip() for o in options]
+        print(f"\n  Select #{i}: name={name!r} id={sel_id!r} aria-label={aria!r}")
+        print(f"    Optionen ({len(option_texts)}): {option_texts[:20]}")
+
+    # Falls es KEIN natives <select> fuer die Disziplin gibt, ist es vermutlich
+    # ein custom Dropdown -- suche nach typischen Mustern (button/div mit
+    # "disziplin" im Attribut, oder anklickbare Listen)
+    custom_candidates = await frame.query_selector_all(
+        "[class*='disziplin' i], [id*='disziplin' i], [class*='event' i], [id*='event' i]"
+    )
+    print(f"\n  Moegliche custom-Dropdown-Elemente (Klasse/ID enthaelt 'disziplin' oder 'event'): "
+          f"{len(custom_candidates)}")
+    for i, el in enumerate(custom_candidates[:10]):
+        tag = await el.evaluate("el => el.tagName")
+        cls = await el.get_attribute("class")
+        el_id = await el.get_attribute("id")
+        text = (await el.inner_text())[:80] if await el.inner_text() else ""
+        print(f"    [{i}] <{tag} class={cls!r} id={el_id!r}> Text: {text!r}")
+    print("=" * 60 + "\n")
+
+
 async def select_dropdown_by_label(frame, label_substring: str, option_text: str):
     """Sucht ein <select>, dessen sichtbares Label/umgebender Text label_substring
     enthaelt, und waehlt darin die Option mit option_text aus. Mehrere Fallback-
@@ -119,6 +162,7 @@ async def fetch_top15(browser, discipline_label: str, age_label: str, year: int,
             await select_dropdown_by_label(frame, "jahr", str(year))
 
             if not ok_disc or not ok_age:
+                await dump_diagnostics(frame)
                 raise RuntimeError(
                     f"Dropdown fuer Disziplin ({ok_disc}) oder Altersklasse ({ok_age}) "
                     f"nicht gefunden -- Selektoren muessen angepasst werden."
