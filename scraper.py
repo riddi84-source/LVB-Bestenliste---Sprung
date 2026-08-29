@@ -8,21 +8,24 @@ Die Brandenburg-Bestenliste laeuft auf der Seite
 als eingebetteter iframe, der intern auf
   https://dlvbl.laportal.net/Performances?performanceList=a64ee412-73fe-4f16-bb88-bc39c2d7fcdb
 zugreift. Ein DIREKTER Aufruf dieser iframe-Adresse (ohne den Umweg ueber die
-Brandenburg-Seite) wurde beim Testen mit "Performance list not found" abgelehnt --
-offenbar prueft die Seite, ob die Anfrage wirklich eingebettet erfolgt.
+Brandenburg-Seite) wird mit "Performance list not found" abgelehnt -- die Seite
+prueft offenbar, ob die Anfrage wirklich eingebettet erfolgt. Deshalb laedt dieser
+Scraper immer die Brandenburg-Seite und arbeitet dann im eingebetteten iframe.
 
-Deshalb geht dieser Scraper den gleichen Weg wie ein echter Browser: er laedt die
-Brandenburg-Seite, findet darin den iframe, und bedient darin die Dropdown-Filter
-(Disziplin, Altersklasse, Umgebung, Jahr) per sichtbarem Text -- genau wie ein
-Mensch es tun wuerde. Das ist robuster als interne Codes zu erraten, aber auch
-angewiesen auf die exakten Bezeichnungen/Selektoren der Seite.
+Die Filter-Felder haben feste IDs im HTML (per Quelltext-Analyse bestaetigt):
+  #classcode    Altersklasse (z.B. "MJU18" = maennliche Jugend U18)
+  #eventcode    Disziplin -- WICHTIG: dieses <select> ist beim Laden der Seite
+                LEER (<select id="eventcode"></select>) und wird erst per
+                JavaScript nachtraeglich befuellt. Der Scraper muss deshalb
+                aktiv warten, bis Optionen erscheinen, bevor er waehlen kann.
+  #environment  Umgebung (Freiluft/Halle), bereits beim Laden befuellt
+  #year         Jahr, bereits beim Laden befuellt
 
-WICHTIGER HINWEIS: Ich konnte dieses Skript nicht live gegen die echte Seite
-testen (kein Internetzugriff in meiner Entwicklungsumgebung). Die Selektoren
-fuer die Dropdowns (siehe SELECT_DISZIPLIN, SELECT_ALTERSKLASSE, etc. unten)
-sind nach bestem Wissen geschrieben, muessen aber beim ersten echten Lauf sehr
-wahrscheinlich noch nachjustiert werden. Der Log-Output ist bewusst ausfuehrlich,
-damit wir bei Fehlern genau sehen, woran es liegt.
+Die genauen "value"-Codes fuer #eventcode (Disziplin) kenne ich nicht (das
+<select> war ja leer im Quelltext) -- deshalb waehlt der Scraper weiterhin
+per sichtbarem Options-TEXT ("Hochsprung", "Stabhochsprung", ...), nicht per
+Code. Das classcode-Feld dagegen ist bereits beim Laden befuellt und bekannt
+(siehe AGE_CLASSES unten, aus dem echten Quelltext uebernommen).
 """
 
 import asyncio
@@ -42,21 +45,21 @@ DISCIPLINES = {
     "dreisprung": "Dreisprung",
 }
 
-# dashboard-interner Schluessel -> sichtbarer Text im Altersklasse-Dropdown
-# ANNAHME, noch nicht live verifiziert -- siehe Hinweis oben.
+# dashboard-interner Schluessel -> "value"-Attribut im Altersklasse-Dropdown
+# (direkt aus dem echten Seitenquelltext uebernommen, nicht mehr geraten)
 AGE_CLASSES = {
-    "Männer": "Männer",
-    "Frauen": "Frauen",
-    "mU20": "Männliche Jugend U20",
-    "wU20": "Weibliche Jugend U20",
-    "mU18": "Männliche Jugend U18",
-    "wU18": "Weibliche Jugend U18",
-    "mU16": "Männliche Jugend U16",
-    "wU16": "Weibliche Jugend U16",
-    "M15": "Jugend M15",
-    "W15": "Jugend W15",
-    "M14": "Jugend M14",
-    "W14": "Jugend W14",
+    "Männer": "M",
+    "Frauen": "W",
+    "mU20": "MJU20",
+    "wU20": "WJU20",
+    "mU18": "MJU18",
+    "wU18": "WJU18",
+    "mU16": "MJU16",
+    "wU16": "WJU16",
+    "M15": "M15",
+    "W15": "W15",
+    "M14": "M14",
+    "W14": "W14",
 }
 
 TOP_N = 15
@@ -119,32 +122,36 @@ async def dump_diagnostics(frame):
     print("=" * 60 + "\n")
 
 
-async def select_dropdown_by_label(frame, label_substring: str, option_text: str):
-    """Sucht ein <select>, dessen sichtbares Label/umgebender Text label_substring
-    enthaelt, und waehlt darin die Option mit option_text aus. Mehrere Fallback-
-    Strategien, weil die genaue Seitenstruktur nicht live geprueft werden konnte.
-
-    force=True: viele Webseiten blenden das native <select> optisch aus und zeigen
-    stattdessen ein eigenes, gestyltes Dropdown an. Das <select> funktioniert dann
-    weiterhin technisch, gilt fuer Playwright aber als "nicht sichtbar" -- ohne
-    force=True wuerde select_option() dort endlos auf Sichtbarkeit warten und
-    nach 30s timeouten (genau das Verhalten aus dem ersten Testlauf)."""
-    selects = await frame.query_selector_all("select")
-    for sel in selects:
-        for attr in ("name", "id", "aria-label"):
-            val = await sel.get_attribute(attr)
-            if val and label_substring.lower() in val.lower():
-                await sel.select_option(label=option_text, force=True)
-                return True
-        options = await sel.query_selector_all("option")
-        option_texts = [await o.inner_text() for o in options]
-        if any(option_text.lower() == t.strip().lower() for t in option_texts):
-            await sel.select_option(label=option_text, force=True)
-            return True
-    return False
+async def select_by_id(frame, element_id: str, value: str = None, label: str = None):
+    """Waehlt eine Option in einem <select id="..."> per value oder sichtbarem
+    Options-Text. force=True, weil das native <select> auf dieser Seite optisch
+    versteckt und durch ein eigenes Erscheinungsbild ersetzt wird -- Playwright
+    wuerde sonst auf "Sichtbarkeit" warten und nach 30s timeouten."""
+    sel = await frame.query_selector(f"#{element_id}")
+    if not sel:
+        return False
+    try:
+        if value is not None:
+            await sel.select_option(value=value, force=True)
+        else:
+            await sel.select_option(label=label, force=True)
+        return True
+    except Exception:
+        return False
 
 
-async def fetch_top15(browser, discipline_label: str, age_label: str, year: int, retries: int = 2):
+async def wait_for_eventcode_populated(frame, timeout_ms: int = 15000):
+    """Das #eventcode-Select ist beim Laden der Seite LEER und wird erst per
+    JavaScript nachtraeglich befuellt (bestaetigt durch Quelltext-Analyse).
+    Wartet aktiv, bis mindestens eine <option> vorhanden ist."""
+    await frame.wait_for_function(
+        "document.getElementById('eventcode') && "
+        "document.getElementById('eventcode').options.length > 0",
+        timeout=timeout_ms,
+    )
+
+
+async def fetch_top15(browser, discipline_label: str, age_value: str, year: int, retries: int = 2):
     last_error = None
     for attempt in range(1, retries + 2):
         context = await browser.new_context()
@@ -155,17 +162,22 @@ async def fetch_top15(browser, discipline_label: str, age_label: str, year: int,
             frame = await get_results_frame(page)
             await frame.wait_for_load_state("networkidle", timeout=20000)
 
-            ok_disc = await select_dropdown_by_label(frame, "disziplin", discipline_label)
-            ok_age = await select_dropdown_by_label(frame, "altersklasse", age_label)
-            # Umgebung/Jahr: best effort, falls Dropdowns existieren
-            await select_dropdown_by_label(frame, "umgebung", "Freiluft")
-            await select_dropdown_by_label(frame, "jahr", str(year))
+            ok_age = await select_by_id(frame, "classcode", value=age_value)
+
+            try:
+                await wait_for_eventcode_populated(frame)
+            except Exception:
+                await dump_diagnostics(frame)
+                raise RuntimeError("Disziplin-Liste (#eventcode) wurde nicht befuellt (Timeout).")
+
+            ok_disc = await select_by_id(frame, "eventcode", label=discipline_label)
+            await select_by_id(frame, "environment", value="1")  # 1 = Freiluft
+            await select_by_id(frame, "year", value=str(year))
 
             if not ok_disc or not ok_age:
                 await dump_diagnostics(frame)
                 raise RuntimeError(
-                    f"Dropdown fuer Disziplin ({ok_disc}) oder Altersklasse ({ok_age}) "
-                    f"nicht gefunden -- Selektoren muessen angepasst werden."
+                    f"Auswahl Disziplin ({ok_disc}) oder Altersklasse ({ok_age}) fehlgeschlagen."
                 )
 
             # Suche-Button klicken (mehrere moegliche Beschriftungen probieren)
@@ -211,14 +223,14 @@ async def fetch_top15(browser, discipline_label: str, age_label: str, year: int,
 
         except Exception as e:
             last_error = e
-            print(f"    Versuch {attempt} fuer '{discipline_label}/{age_label}' fehlgeschlagen: {e}")
+            print(f"    Versuch {attempt} fuer '{discipline_label}/{age_value}' fehlgeschlagen: {e}")
             if attempt <= retries:
                 await asyncio.sleep(3)
             continue
         finally:
             await context.close()
 
-    print(f"    FEHLER: '{discipline_label}/{age_label}' nach {retries + 1} Versuchen nicht ladbar: {last_error}")
+    print(f"    FEHLER: '{discipline_label}/{age_value}' nach {retries + 1} Versuchen nicht ladbar: {last_error}")
     return None  # explizit None = "fehlgeschlagen", anders als [] = "geladen, aber leer"
 
 
@@ -241,9 +253,9 @@ async def run(year: int | None = None):
         browser = await p.chromium.launch(headless=True)
 
         for disc_key, disc_label in DISCIPLINES.items():
-            for age_key, age_label in AGE_CLASSES.items():
-                print(f"Lade {disc_label} / {age_label} / {year} ...")
-                rows = await fetch_top15(browser, disc_label, age_label, year)
+            for age_key, age_value in AGE_CLASSES.items():
+                print(f"Lade {disc_label} / {age_key} ({age_value}) / {year} ...")
+                rows = await fetch_top15(browser, disc_label, age_value, year)
                 combo_key = f"{disc_key}|{age_key}"
                 if rows is None:
                     failures.append(combo_key)
