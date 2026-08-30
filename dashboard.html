@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -234,9 +235,7 @@
       <th>Leistung</th>
       <th>Name</th>
       <th>Verein</th>
-      <th>Jahrgang</th>
-      <th>Datum</th>
-      <th>Ort</th>
+      <th>Wind</th>
     </tr>
   </thead>
   <tbody id="tableBody"></tbody>
@@ -295,15 +294,12 @@ function render(){
   rows.forEach(r=>{
     const tr = document.createElement("tr");
     if(r.rank <= 3) tr.classList.add("top3");
-    const dateFmt = r.date ? new Date(r.date).toLocaleDateString("de-DE",{day:"2-digit",month:"short",year:"numeric"}) : "";
     tr.innerHTML = `
       <td class="rank">${r.rank}.</td>
       <td class="mark">${r.mark}&nbsp;${r.unit||"m"}</td>
       <td class="name">${r.name}</td>
       <td class="club">${r.club||""}</td>
-      <td class="date">${r.birthYear||"–"}</td>
-      <td class="date">${dateFmt}</td>
-      <td class="venue">${r.venue||""}</td>
+      <td class="date">${r.wind||"–"}</td>
     `;
     tbody.appendChild(tr);
   });
