@@ -141,9 +141,16 @@ async def select_by_id(frame, element_id: str, value: str = None, label: str = N
 
 
 async def wait_for_eventcode_populated(frame, timeout_ms: int = 15000):
-    """Das #eventcode-Select ist beim Laden der Seite LEER und wird erst per
-    JavaScript nachtraeglich befuellt (bestaetigt durch Quelltext-Analyse).
-    Wartet aktiv, bis mindestens eine <option> vorhanden ist."""
+    """Das #eventcode-Select ist beim Laden der Seite LEER. Vermutung (nach
+    einem ersten fehlgeschlagenen Testlauf, in dem reines Warten bei JEDER
+    Kombination timeoutete): die Optionen werden erst per Lazy-Load befuellt,
+    wenn das Feld aktiv angeklickt/fokussiert wird -- nicht automatisch beim
+    Laden. Deshalb hier zuerst aktiv anklicken, DANN warten."""
+    try:
+        await frame.click("#eventcode", force=True, timeout=5000)
+    except Exception:
+        pass  # falls Klick selbst schon fehlschlaegt, trotzdem weiter zum Warten
+
     await frame.wait_for_function(
         "document.getElementById('eventcode') && "
         "document.getElementById('eventcode').options.length > 0",
@@ -252,11 +259,25 @@ async def run(year: int | None = None):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
 
+        first_combo = True
         for disc_key, disc_label in DISCIPLINES.items():
             for age_key, age_value in AGE_CLASSES.items():
                 print(f"Lade {disc_label} / {age_key} ({age_value}) / {year} ...")
                 rows = await fetch_top15(browser, disc_label, age_value, year)
                 combo_key = f"{disc_key}|{age_key}"
+
+                if rows is None and first_combo:
+                    # Fail-fast: wenn schon die allererste Kombination scheitert,
+                    # ist das Problem grundsaetzlich (nicht kombinationsspezifisch).
+                    # Abbrechen statt 47 weitere Kombinationen sinnlos durchzuprobieren
+                    # und wertvolle Laufzeit zu verschwenden.
+                    print("\nABBRUCH: Bereits die allererste Kombination ist fehlgeschlagen -- "
+                          "das deutet auf ein grundsaetzliches Problem hin, nicht auf einen "
+                          "Einzelfall. Breche restliche 47 Kombinationen ab, um Zeit zu sparen.")
+                    await browser.close()
+                    return {}
+
+                first_combo = False
                 if rows is None:
                     failures.append(combo_key)
                 else:
