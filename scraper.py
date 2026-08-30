@@ -159,10 +159,22 @@ async def wait_for_eventcode_populated(frame, timeout_ms: int = 15000):
 
 
 async def fetch_top15(browser, discipline_label: str, age_value: str, year: int, retries: int = 2):
+    global _diagnostic_dumped
     last_error = None
     for attempt in range(1, retries + 2):
         context = await browser.new_context()
         page = await context.new_page()
+
+        # Nur beim allerersten Versuch: Netzwerk-Anfragen und Konsolen-Meldungen
+        # mitschneiden, um zu sehen, ob/welche Anfrage die Disziplin-/Jahr-Liste
+        # eigentlich befuellen sollte, und ob dabei ein JS-Fehler auftritt.
+        captured_requests = []
+        captured_console = []
+        if not _diagnostic_dumped:
+            page.on("request", lambda req: captured_requests.append(f"{req.method} {req.url}"))
+            page.on("console", lambda msg: captured_console.append(f"[{msg.type}] {msg.text}"))
+            page.on("pageerror", lambda exc: captured_console.append(f"[pageerror] {exc}"))
+
         try:
             await page.goto(BRANDENBURG_PAGE, wait_until="networkidle", timeout=30000)
             await page.wait_for_selector("iframe", timeout=15000)
@@ -174,7 +186,20 @@ async def fetch_top15(browser, discipline_label: str, age_value: str, year: int,
             try:
                 await wait_for_eventcode_populated(frame)
             except Exception:
-                await dump_diagnostics(frame)
+                if not _diagnostic_dumped:
+                    print("\n--- Mitgeschnittene Netzwerk-Anfragen waehrend des Ladens ---")
+                    relevant = [r for r in captured_requests if "laportal" in r.lower() or "api" in r.lower()
+                                or "event" in r.lower() or "json" in r.lower()]
+                    for r in (relevant or captured_requests)[:40]:
+                        print(f"  {r}")
+                    print(f"  (gesamt {len(captured_requests)} Anfragen, davon {len(relevant)} als relevant gefiltert)")
+                    print("--- Konsolen-Meldungen / JS-Fehler ---")
+                    if captured_console:
+                        for c in captured_console[:30]:
+                            print(f"  {c}")
+                    else:
+                        print("  (keine)")
+                    await dump_diagnostics(frame)
                 raise RuntimeError("Disziplin-Liste (#eventcode) wurde nicht befuellt (Timeout).")
 
             ok_disc = await select_by_id(frame, "eventcode", label=discipline_label)
