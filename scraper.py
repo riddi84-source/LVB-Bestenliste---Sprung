@@ -140,21 +140,47 @@ async def select_by_id(frame, element_id: str, value: str = None, label: str = N
         return False
 
 
-async def wait_for_eventcode_populated(frame, timeout_ms: int = 15000):
-    """Das #eventcode-Select ist beim Laden der Seite LEER. Vermutung (nach
-    einem ersten fehlgeschlagenen Testlauf, in dem reines Warten bei JEDER
-    Kombination timeoutete): die Optionen werden erst per Lazy-Load befuellt,
-    wenn das Feld aktiv angeklickt/fokussiert wird -- nicht automatisch beim
-    Laden. Deshalb hier zuerst aktiv anklicken, DANN warten."""
-    try:
-        await frame.click("#eventcode", force=True, timeout=5000)
-    except Exception:
-        pass  # falls Klick selbst schon fehlschlaegt, trotzdem weiter zum Warten
+PERFORMANCE_LIST_ID = "a64ee412-73fe-4f16-bb88-bc39c2d7fcdb"
 
-    await frame.wait_for_function(
-        "document.getElementById('eventcode') && "
-        "document.getElementById('eventcode').options.length > 0",
-        timeout=timeout_ms,
+# Bekannt aus dem urspruenglichen Seitenquelltext (siehe Screenshot vom Nutzer);
+# das <select id="year"> wird von der Seiten-eigenen JS-Komponente offenbar
+# geleert und nie neu befuellt -- deshalb hier fest hinterlegt statt verlassen
+# auf das, was die Seite selbst anbietet.
+KNOWN_YEARS = [2026, 2025, 2024, 2023, 2022, 2021, 2020]
+
+
+async def populate_eventcode_directly(frame, classcode_value: str, environment_value: str = "1"):
+    """Die Disziplin-Liste (#eventcode) wird normalerweise per AJAX-Aufruf an
+    GetEventsForClass befuellt -- das per Netzwerk-Mitschnitt bestaetigt wurde.
+    Dieser Aufruf feuert aber nur EINMAL automatisch beim Laden der Seite, mit
+    cls=null&env=null (liefert dadurch nichts Brauchbares), und wird durch
+    unsere spaetere Altersklassen-Auswahl NICHT erneut ausgeloest. Deshalb rufen
+    wir die Adresse hier selbst mit den richtigen Werten auf und tragen das
+    Ergebnis direkt in das <select> ein, statt auf einen Auto-Trigger zu hoffen."""
+    url = (f"https://dlvbl.laportal.net/Performances/GetEventsForClass"
+           f"?cls={classcode_value}&performanceList={PERFORMANCE_LIST_ID}&env={environment_value}")
+    html_fragment = await frame.evaluate(
+        """async (url) => {
+            const res = await fetch(url, {credentials: 'include'});
+            return await res.text();
+        }""",
+        url,
+    )
+    if not html_fragment or "<option" not in html_fragment.lower():
+        raise RuntimeError(f"GetEventsForClass lieferte keine Optionen zurueck (Antwortlaenge: {len(html_fragment or '')}).")
+    await frame.evaluate(
+        """([html]) => { document.getElementById('eventcode').innerHTML = html; }""",
+        [html_fragment],
+    )
+
+
+async def populate_year_directly(frame):
+    """#year wird ebenfalls von der Seiten-JS geleert -- feste Liste aus dem
+    urspruenglichen Quelltext direkt eintragen, statt auf die Seite zu vertrauen."""
+    options_html = "".join(f'<option value="{y}">{y}</option>' for y in KNOWN_YEARS)
+    await frame.evaluate(
+        """([html]) => { document.getElementById('year').innerHTML = html; }""",
+        [options_html],
     )
 
 
@@ -184,8 +210,9 @@ async def fetch_top15(browser, discipline_label: str, age_value: str, year: int,
             ok_age = await select_by_id(frame, "classcode", value=age_value)
 
             try:
-                await wait_for_eventcode_populated(frame)
-            except Exception:
+                await populate_eventcode_directly(frame, age_value, environment_value="1")
+                await populate_year_directly(frame)
+            except Exception as e:
                 if not _diagnostic_dumped:
                     print("\n--- Mitgeschnittene Netzwerk-Anfragen waehrend des Ladens ---")
                     relevant = [r for r in captured_requests if "laportal" in r.lower() or "api" in r.lower()
@@ -200,7 +227,7 @@ async def fetch_top15(browser, discipline_label: str, age_value: str, year: int,
                     else:
                         print("  (keine)")
                     await dump_diagnostics(frame)
-                raise RuntimeError("Disziplin-Liste (#eventcode) wurde nicht befuellt (Timeout).")
+                raise RuntimeError(f"Direktes Befuellen von Disziplin/Jahr fehlgeschlagen: {e}")
 
             ok_disc = await select_by_id(frame, "eventcode", label=discipline_label)
             await select_by_id(frame, "environment", value="1")  # 1 = Freiluft
