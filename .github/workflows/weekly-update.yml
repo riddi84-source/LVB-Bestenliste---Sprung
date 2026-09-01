@@ -33,6 +33,16 @@ jobs:
         run: |
           git config user.name "brandenburg-sprung-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data.json previous_data.json
+          shopt -s nullglob
+          FILES=(data.json previous_data.json)
+          EXISTING=()
+          for f in "${FILES[@]}"; do
+            [ -f "$f" ] && EXISTING+=("$f")
+          done
+          if [ ${#EXISTING[@]} -eq 0 ]; then
+            echo "Keine data.json/previous_data.json vorhanden -- Scraper hat nichts geschrieben. Ueberspringe Commit."
+            exit 0
+          fi
+          git add "${EXISTING[@]}"
           git diff --quiet --cached || git commit -m "Wöchentliches Update: $(date +'%Y-%m-%d')"
           git push
