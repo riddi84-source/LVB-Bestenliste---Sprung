@@ -173,6 +173,7 @@ async def run(year: int | None = None):
         browser = await p.chromium.launch(headless=True)
 
         first_combo = True
+        abort_after_first_failure = False
         for disc_key, event_code in EVENT_CODES.items():
             for age_key, age_value in AGE_CLASSES.items():
                 print(f"Lade {disc_key} ({event_code}) / {age_key} ({age_value}) / {year} ...")
@@ -180,11 +181,12 @@ async def run(year: int | None = None):
                 combo_key = f"{disc_key}|{age_key}"
 
                 if rows is None and first_combo:
-                    print("\nABBRUCH: Bereits die allererste Kombination ist fehlgeschlagen -- "
-                          "das deutet auf ein grundsaetzliches Problem hin. Breche restliche "
-                          "Kombinationen ab, um Zeit zu sparen.")
-                    await browser.close()
-                    return {}
+                    print("\nWARNUNG: Bereits die allererste Kombination ist fehlgeschlagen -- "
+                          "das deutet auf ein grundsaetzliches Problem hin (z.B. falscher "
+                          "classcode oder Session-Annahme). Ich probiere trotzdem alle "
+                          "restlichen Kombinationen durch (kein Zeitsparen mehr auf Kosten "
+                          "eines leeren data.json), sammle aber alle Fehler fuer die Diagnose.")
+                    abort_after_first_failure = True
 
                 first_combo = False
                 if rows is None:
@@ -194,6 +196,12 @@ async def run(year: int | None = None):
                     print(f"  -> {len(rows)} Eintraege")
 
         await browser.close()
+
+    if abort_after_first_failure and not lists:
+        print("\nHINWEIS: Keine einzige Kombination war erfolgreich -- "
+              "wahrscheinlich ein grundsaetzliches Problem mit URL-Parametern oder "
+              "der Session-Annahme. Siehe DIAGNOSE-Block oben im Log fuer den "
+              "tatsaechlichen Seiteninhalt.")
 
     previous = {}
     if PREVIOUS_FILE.exists():
